@@ -1,16 +1,17 @@
 from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
+from openpyxl import load_workbook
+import os
 
 # "use": "@liudonghua123/now-flask"
 
-
 app = Flask(__name__)
 
-# Function to calculate due date based on last menstrual period (LMP)
+# Function to calculate due date based on LMP
 def calculate_due_date(lmp_date):
     # Assuming 40 weeks gestation period
     due_date = lmp_date + timedelta(weeks=40)
-    return due_date.strftime("%Y-%m-%d")
+    return due_date
 
 # Function to calculate trimester based on current week
 def calculate_trimester(current_week):
@@ -20,17 +21,6 @@ def calculate_trimester(current_week):
         return "Second Trimester"
     else:
         return "Third Trimester"
-
-# Function to calculate fetal size based on current week
-def calculate_fetal_size(current_week):
-    # Dummy fetal size calculation for testing
-    # Replace with actual data or calculations
-    if current_week <= 13:
-        return {"length": "2.9 cm - 7.4 cm", "mass": "2 g - 14 g"}
-    elif current_week <= 26:
-        return {"length": "22.6 cm - 36.6 cm", "mass": "430 g - 820 g"}
-    else:
-        return {"length": "33.6 cm - 50.7 cm", "mass": "1300 g - 3700 g"}
 
 # Function to calculate current pregnancy week
 def calculate_current_week(lmp_date):
@@ -42,7 +32,8 @@ def calculate_current_week(lmp_date):
     return current_week
 
 # Function to calculate remaining weeks until due date
-def calculate_remaining_weeks(lmp_date):
+def calculate_remaining_weeks(lmp_date_str):
+    lmp_date = datetime.strptime(lmp_date_str, "%Y-%m-%d")
     due_date = calculate_due_date(lmp_date)
     today = datetime.today()
     # Calculate difference in days between today and due date
@@ -52,7 +43,8 @@ def calculate_remaining_weeks(lmp_date):
     return remaining_weeks
 
 # Function to calculate days left until due date
-def calculate_days_left(lmp_date):
+def calculate_days_left(lmp_date_str):
+    lmp_date = datetime.strptime(lmp_date_str, "%Y-%m-%d")
     due_date = calculate_due_date(lmp_date)
     today = datetime.today()
     # Calculate difference in days between today and due date
@@ -73,12 +65,64 @@ def get_trimester(lmp_date):
     trimester = calculate_trimester(current_week)
     return jsonify({"trimester": trimester})
 
-@app.route('/fetal_size/<lmp_date>')
-def get_fetal_size(lmp_date):
-    lmp_date = datetime.strptime(lmp_date, "%Y-%m-%d")
-    current_week = calculate_current_week(lmp_date)
-    fetal_size = calculate_fetal_size(current_week)
-    return jsonify({"fetal_size": fetal_size})
+@app.route('/mass_progress/<int:week>')
+def get_mass_for_week(week):
+    if week < 8:
+        return jsonify({"message": "Week is too small"}), 400
+
+    try:
+        # Get the directory of the current Python script
+        script_dir = os.path.dirname(__file__)
+
+        # Construct the path to the Excel file
+        excel_file = os.path.join(script_dir, 'data.xlsx')
+        workbook = load_workbook(excel_file)
+        sheet = workbook.active
+        
+        # Assuming 'Week' and 'Mass' are column headers
+        week_column = 'A'  # Update with the column letter for 'Week' column
+        mass_column = 'C'  # Update with the column letter for 'Mass' column
+        
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row[0] == week:
+                mass = float(row[2]) if row[2] is not None else None
+                return jsonify({"mass": mass})
+                
+        return jsonify({"message": "Mass not found for the specified week"}), 404
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return jsonify({"message": "Internal Server Error"}), 500
+
+
+@app.route('/length_progress/<int:week>')
+def get_length_for_week(week):
+    if week < 8:
+        return jsonify({"message": "Week is too small"}), 400
+
+    try:
+         # Get the directory of the current Python script
+        script_dir = os.path.dirname(__file__)
+
+        # Construct the path to the Excel file
+        excel_file = os.path.join(script_dir, 'data.xlsx')
+        workbook = load_workbook(excel_file)
+        sheet = workbook.active
+        
+        # Assuming 'Week' and 'Mass' are column headers
+        week_column = 'A'  # Update with the column letter for 'Week' column
+        length_column = 'B'  # Update with the column letter for 'Length' column
+        
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row[0] == week:
+                length = float(row[1]) if row[1] is not None else None
+                return jsonify({"length": length})
+                
+        return jsonify({"message": "Length not found for the specified week"}), 404
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return jsonify({"message": "Internal Server Error"}), 500
+
+
 
 @app.route('/current_week/<lmp_date>')
 def get_current_week(lmp_date):
@@ -86,15 +130,13 @@ def get_current_week(lmp_date):
     current_week = calculate_current_week(lmp_date)
     return jsonify({"current_week": current_week})
 
-@app.route('/remaining_weeks/<lmp_date>')
+@app.route('/remaining_weeks/<string:lmp_date>')
 def get_remaining_weeks(lmp_date):
-    lmp_date = datetime.strptime(lmp_date, "%Y-%m-%d")
     remaining_weeks = calculate_remaining_weeks(lmp_date)
     return jsonify({"remaining_weeks": remaining_weeks})
 
-@app.route('/days_left/<lmp_date>')
+@app.route('/days_left/<string:lmp_date>')
 def get_days_left(lmp_date):
-    lmp_date = datetime.strptime(lmp_date, "%Y-%m-%d")
     days_left = calculate_days_left(lmp_date)
     return jsonify({"days_left": days_left})
 
@@ -104,8 +146,9 @@ def get_days_left(lmp_date):
     ENDPOINTS AND FUNCTIONS START HERE"""
 
 # Function to calculate the current menstrual cycle phase
-def calculate_cycle_phase(last_period_date):
-    today = datetime.today().date()
+def calculate_cycle_phase(last_period_date_str):
+    last_period_date = datetime.strptime(last_period_date_str, "%Y-%m-%d")
+    today = datetime.today()
     cycle_length = 28  # Default menstrual cycle length (can be adjusted)
     # Calculate days since the last period
     days_since_last_period = (today - last_period_date).days
@@ -113,45 +156,51 @@ def calculate_cycle_phase(last_period_date):
     cycle_day = (days_since_last_period % cycle_length) + 1
     # Determine the cycle phase based on the cycle day
     if cycle_day <= 5:
-        return "Menstrual Phase"
+        return "Menstrual"
     elif cycle_day <= 14:
-        return "Follicular Phase"
+        return "Follicular"
     elif cycle_day <= 21:
-        return "Ovulatory Phase"
+        return "Ovulatory"
     else:
-        return "Luteal Phase"
+        return "Luteal"
 
 # Function to estimate the chance of pregnancy
-def calculate_pregnancy_chance():
-    # Dummy pregnancy chance calculation for testing
-    # Replace with actual calculation based on user data or algorithms
-    return "Low"  # Placeholder value
+def calculate_pregnancy_chance(menstrual_cycle_length, current_cycle_day):
+    
+    # Define the fertile window based on the menstrual cycle length
+    ovulation_day = int(menstrual_cycle_length * 0.14)  # Approximation of ovulation day
+    fertile_window_start = ovulation_day - 5
+    fertile_window_end = ovulation_day + 4
+    
+    # Check if the current day is within the fertile window
+    if fertile_window_start <= current_cycle_day <= fertile_window_end:
+        # If within fertile window, higher chance of pregnancy
+        return "High"  # Output "high" if within fertile window
+    else:
+        # If outside fertile window, lower chance of pregnancy
+        return "Low"  # Output "low" if outside fertile window
 
 # Function to calculate the date of the next period
-def calculate_next_period_date(last_period_date):
-    cycle_length = 28  # Default menstrual cycle length (can be adjusted)
+def calculate_next_period_date(last_period_date, cycle_length):
+    last_period_date = datetime.strptime(last_period_date, "%Y-%m-%d")
     next_period_date = last_period_date + timedelta(days=cycle_length)
     return next_period_date.strftime("%Y-%m-%d")
 
 # API endpoints for menstrual tracking
-@app.route('/cycle_phase', methods=['POST'])
-def get_cycle_phase():
-    data = request.json
-    last_period_date = datetime.strptime(data['last_period_date'], "%Y-%m-%d").date()
-    cycle_phase = calculate_cycle_phase(last_period_date)
-    return jsonify({"cycle_phase": cycle_phase})
+@app.route('/calculate_cycle_phase/<last_period_date_str>')
+def get_cycle_phase(last_period_date_str):
+    cycle_phase = calculate_cycle_phase(last_period_date_str)
+    return jsonify({'cycle_phase': cycle_phase})
 
-@app.route('/pregnancy_chance')
-def get_pregnancy_chance():
-    pregnancy_chance = calculate_pregnancy_chance()
-    return jsonify({"pregnancy_chance": pregnancy_chance})
+@app.route('/calculate_pregnancy_chance/<int:cycle_length>/<int:current_day>')
+def calculate_pregnancy(cycle_length, current_day):
+    pregnancy_chance = calculate_pregnancy_chance(cycle_length, current_day)
+    return jsonify({'pregnancy_chance': pregnancy_chance})
 
-@app.route('/next_period_date', methods=['POST'])
-def get_next_period_date():
-    data = request.json
-    last_period_date = datetime.strptime(data['last_period_date'], "%Y-%m-%d").date()
-    next_period_date = calculate_next_period_date(last_period_date)
-    return jsonify({"next_period_date": next_period_date})
+@app.route('/next_period_date/<last_period_date_str>/<int:cycle_length>')
+def calculate_next_period(last_period_date_str, cycle_length):
+    next_period_date = calculate_next_period_date(last_period_date_str, cycle_length)
+    return jsonify({'next_period_date': next_period_date})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
